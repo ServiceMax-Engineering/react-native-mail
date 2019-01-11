@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.net.Uri;
+import android.support.v4.content.FileProvider;
 import android.text.Html;
 
 import com.facebook.react.bridge.ReactApplicationContext;
@@ -13,6 +14,7 @@ import com.facebook.react.bridge.ReadableMap;
 import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.Callback;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.io.File;
 
@@ -84,22 +86,31 @@ public class RNMailModule extends ReactContextBaseJavaModule {
       i.putExtra(Intent.EXTRA_BCC, readableArrayToStringArray(bccRecipients));
     }
 
-    if (options.hasKey("attachment") && !options.isNull("attachment")) {
-      ReadableMap attachment = options.getMap("attachment");
-      if (attachment.hasKey("path") && !attachment.isNull("path")) {
-        String path = attachment.getString("path");
-        File file = new File(path);
-        Uri p = Uri.fromFile(file);
-        i.putExtra(Intent.EXTRA_STREAM, p);
-      }
-    }
-
     PackageManager manager = reactContext.getPackageManager();
+
     List<ResolveInfo> list = manager.queryIntentActivities(i, 0);
 
     if (list == null || list.size() == 0) {
       callback.invoke("not_available");
       return;
+    }
+
+
+    if (options.hasKey("attachment") && !options.isNull("attachment")) {
+      String authority = options.getString("authority");
+      ReadableMap attachment = options.getMap("attachment");
+      if (attachment.hasKey("path") && !attachment.isNull("path")) {
+        String path = attachment.getString("path");
+        File file = new File(path);
+        if ( authority != null && authority.length() >1 &&  file.exists()) {
+          Uri contentUri = FileProvider.getUriForFile(this.reactContext.getApplicationContext(),authority,file);
+          i.putExtra(Intent.EXTRA_STREAM,contentUri);
+          for (ResolveInfo resolveInfo : list) {
+            String packageName = resolveInfo.activityInfo.packageName;
+            this.reactContext.getApplicationContext().grantUriPermission(packageName, contentUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+          }
+        }
+      }
     }
 
     if (list.size() == 1) {
@@ -112,7 +123,6 @@ public class RNMailModule extends ReactContextBaseJavaModule {
     } else {
       Intent chooser = Intent.createChooser(i, "Send Mail");
       chooser.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-
       try {
         reactContext.startActivity(chooser);
       } catch (Exception ex) {
